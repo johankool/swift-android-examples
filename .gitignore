@@ -19,3 +19,5 @@ jniLibs
 # Swift build artifacts
 **/.build/
 **/Package.resolved
+
+.vscode
