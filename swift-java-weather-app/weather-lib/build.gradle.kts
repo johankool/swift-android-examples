@@ -1,0 +1,164 @@
+import java.io.File
+
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+android {
+    namespace = "com.example.weatherlib"
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 28
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation("org.swift.swiftkit:swiftkit-core:1.0-SNAPSHOT")
+}
+
+// Helper function to get swiftly executable path
+fun getSwiftlyPath(): File {
+    val fromConfig = project.findProperty("swiftly.path") as? String ?: System.getenv("SWIFTLY_PATH")
+    if (fromConfig != null) {
+        return file(fromConfig)
+    }
+
+    // Try to find swiftly in common locations
+    val homeDir = System.getProperty("user.home")
+    val possiblePaths = listOf(
+        "$homeDir/.swiftly/bin/swiftly",
+        "$homeDir/.local/share/swiftly/bin/swiftly",
+        "$homeDir/.local/bin/swiftly",
+        "/usr/local/bin/swiftly",
+        "/opt/homebrew/bin/swiftly",
+        "/root/.local/share/swiftly/bin/swiftly"
+    )
+
+    for (path in possiblePaths) {
+        val f = file(path)
+        if (f.exists()) {
+            return f
+        }
+    }
+
+    throw GradleException("Swift SDK path not found. Please set swiftly.path in the gradle.properties file or set SWIFTLY_PATH environment variable.")
+}
+
+fun getSwiftSDKPath(): File {
+    val fromConfig = project.findProperty("swift.sdk.path") as? String ?: System.getenv("SWIFT_SDK_PATH")
+    if (fromConfig != null) {
+        return file(fromConfig)
+    }
+
+    // If no custom path is set, try to find the Swift SDK in common locations.
+    val homeDir = System.getProperty("user.home")
+    val possiblePaths = listOf(
+        "$homeDir/Library/org.swift.swiftpm/swift-sdks/",     // Common on macOS
+        "$homeDir/.config/swiftpm/swift-sdks/",               // Common on Linux
+        "$homeDir/.swiftpm/swift-sdks/",                      // Older location
+        "/root/.swiftpm/swift-sdks/"                            // For builds running as root
+    )
+
+    // Iterate through the list of possible paths.
+    for (path in possiblePaths) {
+        val f = file(path)
+        if (f.exists()) {
+            return f
+        }
+    }
+
+    throw GradleException("Swift SDK path not found. Please set swift.sdk.path in the gradle.properties file or set SW_SDK_PATH environment variable.")
+}
+
+// List of Swift runtime libraries we want to include
+val swiftRuntimeLibs = listOf(
+    "swiftCore", "swift_Concurrency", "swift_StringProcessing", "swift_RegexParser",
+    "swift_Builtin_float", "swift_math", "swiftAndroid", "dispatch",
+    "BlocksRuntime", "swiftSwiftOnoneSupport", "swiftDispatch", "Foundation",
+    "FoundationEssentials", "FoundationInternationalization", "_FoundationICU", "swiftSynchronization"
+)
+val sdkName = "swift-6.3-RELEASE_android.artifactbundle"
+val swiftVersion = "6.3"
+val minSdk = android.defaultConfig.minSdk!!
+
+/**
+ * Android ABIs and their Swift triple mappings
+ */
+val abis = mapOf(
+    "arm64-v8a"     to mapOf("triple" to "aarch64-unknown-linux-android$minSdk", "androidSdkLibDirectory" to "swift-aarch64", "ndkDirectory" to "aarch64-linux-android"),
+    "armeabi-v7a"   to mapOf("triple" to "armv7-unknown-linux-android$minSdk", "androidSdkLibDirectory" to "swift-armv7", "ndkDirectory" to "arm-linux-android"),
+    "x86_64"        to mapOf("triple" to "x86_64-unknown-linux-android$minSdk", "androidSdkLibDirectory" to "swift-x86_64", "ndkDirectory" to "x86_64-linux-android")
+)
+val generatedJniLibsDir = layout.buildDirectory.dir("generated/jniLibs")
+val swiftSdkPath = "${getSwiftSDKPath().absolutePath}/$sdkName"
+
+abstract class BuildSwiftTask : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+}
+
+val buildSwiftAll = tasks.register<BuildSwiftTask>("buildSwiftAll") {
+    group = "build"
+    description = "Builds the Swift code for all Android ABIs."
+
+    inputs.file(file("Package.swift"))
+    inputs.dir(file("Sources/WeatherLibrary"))
+
+    val genDir = layout.buildDirectory.dir("../.build/plugins/outputs/${layout.projectDirectory.asFile.name.lowercase()}/WeatherLibrary/destination/JExtractSwiftPlugin/src/generated/java")
+    outputs.dir(genDir)
+    outputDir.set(genDir)
+}
+// Create a build task for each ABI
+abis.forEach { (abi, info) ->
+    val task = tasks.register<Exec>("buildSwift${abi.replaceFirstChar { it.uppercase() }}") {
+        group = "build"
+        description = "Builds the Swift code for the $abi ABI."
+
+        doFirst {
+            println("Building Swift for $abi (${info["triple"]})...")
+        }
+
+        outputs.dir(layout.projectDirectory.dir(".build/${info["triple"]}/debug"))
+
+        workingDir = layout.projectDirectory.asFile
+        executable = getSwiftlyPath().absolutePath
+
+        args("run", "swift", "build", "+$swiftVersion", "--swift-sdk", info["triple"]!!, "--disable-sandbox")
+    }
+
+    buildSwiftAll.configure { dependsOn(task) }
+}
+
+val copyJniLibs = tasks.register<Copy>("copyJniLibs") {
+    dependsOn(buildSwiftAll)
+
+    abis.forEach { (abi, info) ->
+        from(layout.projectDirectory.dir(".build/${info["triple"]}/debug")) {
+            include("*.so")
+            into(abi)
+        }
+        from(file("$swiftSdkPath/swift-android/ndk-sysroot/usr/lib/${info["ndkDirectory"]}/libc++_shared.so")) {
+            into(abi)
+        }
+        doFirst { println("Copying Swift runtime libraries for $abi...") }
+        from(swiftRuntimeLibs.map { "$swiftSdkPath/swift-android/swift-resources/usr/lib/${info["androidSdkLibDirectory"]}/android/lib$it.so" }) {
+            into(abi)
+        }
+    }
+    into(generatedJniLibsDir)
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.jniLibs?.addStaticSourceDirectory(generatedJniLibsDir.get().asFile.absolutePath)
+        variant.sources.java?.addGeneratedSourceDirectory(buildSwiftAll, BuildSwiftTask::outputDir)
+    }
+}
+
+tasks.named("preBuild").configure { dependsOn(copyJniLibs) }
