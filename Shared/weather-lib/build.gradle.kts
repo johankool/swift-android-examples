@@ -120,6 +120,9 @@ abis.forEach { (abi, info) ->
         group = "build"
         description = "Builds the Swift code for the $abi ABI."
 
+        // We can't conditionally import the swift-java build plugin in Package.swift
+        environment("SWIFT_JAVA_BUILD", "1")
+
         doFirst {
             println("Building Swift for $abi (${info["triple"]})...")
         }

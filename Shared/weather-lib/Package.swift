@@ -3,10 +3,13 @@
 
 import CompilerPluginSupport
 import PackageDescription
+import Foundation.NSProcessInfo
+
+let isSwiftJavaBuild = ProcessInfo.processInfo.environment["SWIFT_JAVA_BUILD"] != nil
 
 let package = Package(
   name: "WeatherLibrary",
-  platforms: [.macOS(.v15)],
+  platforms: [.macOS(.v15), .iOS(.v13)],
   products: [
     .library(
       name: "WeatherLibrary",
@@ -28,15 +31,18 @@ let package = Package(
             .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
             .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession", condition: .when(platforms: [.macOS, .iOS])),
             .product(name: "OpenAPIAsyncHTTPClient", package: "swift-openapi-async-http-client", condition: .when(platforms: [.android])),
-            .product(name: "SwiftJava", package: "swift-java")
         ],
         swiftSettings: [
           .swiftLanguageMode(.v5)
         ],
         plugins: [
             .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator"),
-            .plugin(name: "JExtractSwiftPlugin", package: "swift-java")
         ]
     )
   ]
 )
+
+if isSwiftJavaBuild {
+    package.targets.first?.dependencies.append(.product(name: "SwiftJava", package: "swift-java"))
+    package.targets.first?.plugins?.append(.plugin(name: "JExtractSwiftPlugin", package: "swift-java"))
+}
