@@ -1,7 +1,6 @@
 import java.nio.file.*
 import org.gradle.internal.os.OperatingSystem
 import groovy.json.JsonSlurper
-import kotlinx.serialization.json.*
 
 plugins {
     alias(libs.plugins.android.library)
@@ -112,7 +111,12 @@ def abis = [
 def generatedJniLibsDir = layout.buildDirectory.dir("generated/jniLibs")
 def swiftSdkPath = "${getSwiftSDKPath().absolutePath}/${sdkName}"
 
-def buildSwiftAll = tasks.register("buildSwiftAll") {
+abstract class BuildSwiftTask extends DefaultTask {
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+}
+
+def buildSwiftAll = tasks.register("buildSwiftAll", BuildSwiftTask) {
     group = "build"
     description = "Builds the Swift code for all Android ABIs."
 
@@ -190,6 +194,18 @@ android {
         }
     }
 }
+
+//androidComponents {
+//    onVariants(selector().all()) { variant ->
+//        variant.sources.jniLibs?.addStaticSourceDirectory(
+//                generatedJniLibsDir.get().asFile.absolutePath
+//        )
+//        variant.sources.java?.addGeneratedSourceDirectory(
+//                buildSwiftAll,
+//                BuildSwiftTask::getOutputDir
+//        )
+//    }
+//}
 
 // Make sure we run our tasks before build
 preBuild.dependsOn(copyJniLibs)
