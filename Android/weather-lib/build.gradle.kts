@@ -107,11 +107,12 @@ val buildSwiftAll = tasks.register<BuildSwiftTask>("buildSwiftAll") {
     group = "build"
     description = "Builds the Swift code for all Android ABIs."
 
-    inputs.file(file("Package.swift"))
-    inputs.dir(file("Sources/WeatherLibrary"))
-
-    val genDir = layout.buildDirectory.dir("../.build/plugins/outputs/${layout.projectDirectory.asFile.name.lowercase()}/WeatherLibrary/destination/JExtractSwiftPlugin/src/generated/java")
+    inputs.file(file("../../Shared/weather-lib/Package.swift"))
+    inputs.dir(file("../../Shared/weather-lib/Sources/WeatherLibrary"))
+    
+    val genDir = layout.buildDirectory.dir("../../../Shared/weather-lib/.build/plugins/outputs/${layout.projectDirectory.asFile.name.lowercase()}/WeatherLibrary/destination/JExtractSwiftPlugin/src/generated/java")
     outputs.dir(genDir)
+
     outputDir.set(genDir)
 }
 // Create a build task for each ABI
@@ -126,13 +127,12 @@ abis.forEach { (abi, info) ->
         doFirst {
             println("Building Swift for $abi (${info["triple"]})...")
         }
-
-        outputs.dir(layout.projectDirectory.dir(".build/${info["triple"]}/debug"))
-
+        val outputsDir = layout.projectDirectory.dir("../../Shared/weather-lib/.build/${info["triple"]}/debug")
+        outputs.dir(outputsDir)
         workingDir = layout.projectDirectory.asFile
         executable = getSwiftlyPath().absolutePath
 
-        args("run", "swift", "build", "+$swiftVersion", "--swift-sdk", info["triple"]!!, "--disable-sandbox")
+        args("run", "swift", "build", "+$swiftVersion", "--swift-sdk", info["triple"]!!, "--disable-sandbox", "--package-path", "../../Shared/weather-lib")
     }
 
     buildSwiftAll.configure { dependsOn(task) }
@@ -142,7 +142,7 @@ val copyJniLibs = tasks.register<Copy>("copyJniLibs") {
     dependsOn(buildSwiftAll)
 
     abis.forEach { (abi, info) ->
-        from(layout.projectDirectory.dir(".build/${info["triple"]}/debug")) {
+        from(layout.projectDirectory.dir("../../Shared/weather-lib/.build/${info["triple"]}/debug")) {
             include("*.so")
             into(abi)
         }

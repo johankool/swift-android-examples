@@ -28,6 +28,6 @@ rootProject.name = "Swift Android Examples"
 
 // swift-java examples
 include(":swift-java-weather-app-weather-lib")
-project(":swift-java-weather-app-weather-lib").projectDir = file("../Shared/weather-lib")
+project(":swift-java-weather-app-weather-lib").projectDir = file("weather-lib")
 include(":swift-java-weather-app-weather-app")
 project(":swift-java-weather-app-weather-app").projectDir = file("weather-app")
